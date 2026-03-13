@@ -1,6 +1,6 @@
 # Cliff Notetaker
 
-Cliff Notetaker is an invisible meeting assistant built on Recall.ai’s [Desktop SDK](https://www.recall.ai/product/desktop-recording-sdk), using Electron and Express that listens to your meetings and summarizes key points. 
+Cliff Notetaker is an invisible meeting assistant built on [Recall.ai’s Desktop SDK](https://www.recall.ai/product/desktop-recording-sdk), using Electron and Express that listens to your meetings and summarizes key points. 
 
 Link to the [docs](https://docs.recall.ai/docs/desktop-sdk) for the Desktop SDK.
 
