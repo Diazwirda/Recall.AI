@@ -11,7 +11,7 @@ Follow the steps below to get it running on your machine!
 ## Features
 
 - Automatic meeting detection
-- Background recording using [Recall.ai](https://www.recall.ai) Desktop SDK
+- Background recording using Recall.ai's Desktop SDK
 - Transcript generation
 - AI meeting summaries using OpenAI
 - Displays:
@@ -33,7 +33,7 @@ cd <repo-name>
 
 ---
 
-## 2. Download the Desktop recording SDK on your computer
+## 2. Download the Desktop Recording SDK on your computer
 
 ```bash
 npm install @recallai/desktop-sdk
