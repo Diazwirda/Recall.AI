@@ -1,6 +1,6 @@
 # Cliff Notetaker
 
-Cliff Notetaker is an invisible meeting assistant built on [Recall.ai](https://www.recall.ai))’s Desktop SDK, using Electron and Express, that listens to your meetings and summarizes key points. 
+Cliff Notetaker is an invisible meeting assistant built on Recall.ai’s [Desktop SDK](https://www.recall.ai/product/desktop-recording-sdk), using Electron and Express, that listens to your meetings and summarizes key points. 
 
 Link to the docs for the [Desktop SDK](https://docs.recall.ai/docs/desktop-sdk)
 
@@ -11,7 +11,7 @@ Follow the steps below to get it running on your machine!
 ## Features
 
 - Automatic meeting detection
-- Background recording using [Recall.ai](https://www.recall.ai)) Desktop SDK
+- Background recording using [Recall.ai](https://www.recall.ai) Desktop SDK
 - Transcript generation
 - AI meeting summaries using OpenAI
 - Displays:
@@ -46,8 +46,8 @@ npm install @recallai/desktop-sdk
 
 Create accounts and API keys from:
 
-- Recall.ai → https://recall.ai  
-- OpenAI Platform → https://platform.openai.com
+- [Recall.ai](https://www.recall.ai)  
+- [OpenAI Platform](https://platform.openai.com)
 
 ---
 
@@ -75,7 +75,7 @@ npm install
 
 ## 6. Start an ngrok Tunnel
 
-[Recall.ai](https://www.recall.ai)) requires a **public webhook endpoint**, so we expose the backend with ngrok. 
+[Recall.ai](https://www.recall.ai) requires a **public webhook endpoint**, so we expose the backend with ngrok. 
 
 First make sure you add the authtoken on ngrok:
 
@@ -199,7 +199,7 @@ transcript.done
 
 # Tech Stack
 
-- [Recall.ai](https://www.recall.ai)) Desktop SDK
+- [Recall.ai](https://www.recall.ai) Desktop SDK
 - Electron
 - Express
 - OpenAI API
