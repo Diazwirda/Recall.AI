@@ -171,11 +171,11 @@ npm start
 # How It Works
 
 1. The Electron app detects a meeting window.
-2. A recording starts using **[Recall.ai](https://recall.ai) Desktop SDK**.
-3. When the meeting ends, [Recall.ai](https://recall.ai) sends:
+2. A recording starts using the Desktop SDK.
+3. When the meeting ends, Recall.ai returns:
 
 ```
-sdk_upload.complete
+sdk_upload.completed
 ```
 
 4. The backend retrieves the **recording ID**.
