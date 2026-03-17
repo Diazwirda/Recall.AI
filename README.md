@@ -6,6 +6,9 @@ Link to the [docs](https://docs.recall.ai/docs/desktop-sdk) for the Desktop SDK.
 
 Follow the steps below to get Cliff running on your computer.
 
+Watch the video below for a walkthrough of the setup:
+[![](images/github_demo.png)](https://www.youtube.com/watch?v=x88IYlHBUds)
+
 ---
 
 ## Features
@@ -61,6 +64,12 @@ OPENAI_API_KEY=your_openai_api_key
 RECALL_API_BASE=your_api_base_when_you_signup
 ```
 RECALL_API_BASE is the base URL for your Recall region and is determined when you sign up for Recall.ai
+
+US West 2 -> https://www.us-west-2.recall.ai
+US East 1 -> https://www.us-east-1.recall.ai
+EU -> https://www.eu-central-1.recall.ai
+Asia -> https://www.ap-northeast-1.recall.ai
+
 ---
 
 ## 5. Install Dependencies
