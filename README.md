@@ -2,6 +2,8 @@
 
 Cliff Notetaker is an invisible meeting assistant built on [Recall.ai’s Desktop SDK](https://www.recall.ai/product/desktop-recording-sdk), using Electron and Express that listens to your meetings and summarizes key points. 
 
+[Full walkthrough to the Blog here](https://www.recall.ai/blog/how-to-build-a-desktop-recording-app)
+
 Link to the [docs](https://docs.recall.ai/docs/desktop-sdk) for the Desktop SDK.
 
 Follow the steps below to get Cliff running on your computer.
