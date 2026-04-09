@@ -3,11 +3,17 @@ const express = require("express");
 const app = express();
 require('dotenv').config();
 
-const RECALL_API_BASE = "https://us-west-2.recall.ai";
+const RECALL_API_BASE = process.env.RECALL_API_BASE || "https://us-west-2.recall.ai";
 const RECALL_API_KEY = process.env.RECALL_API_KEY;
 const OpenAI = require("openai");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.use(express.json()); // lets you read JSON bodies
+
+function maskToken(token) {
+  if (!token || typeof token !== "string") return null;
+  if (token.length <= 8) return `${token.slice(0, 2)}...${token.slice(-2)}`;
+  return `${token.slice(0, 6)}...${token.slice(-4)}`;
+}
 
 const completedRecordings = new Set(); // sdk_upload.complete seen
 const transcriptStateByRecordingId = new Map();
@@ -192,14 +198,16 @@ app.get("/api/transcript_for_recording/:recordingId", (req, res) => {
 });
 
 app.post("/api/create_sdk_recording", async (req, res) => {
-    console.log("HIT /api/create_sdk_recording");  // <--- add this
+    console.log("HIT /api/create_sdk_recording");
 
     try {
-        
       if (!RECALL_API_KEY) {
         return res.status(500).json({ error: "Missing RECALL_API_KEY env var" });
       }
-      console.log("Calling Recall:", `${RECALL_API_BASE}/api/v1/sdk_upload/`);
+      console.log("Calling Recall:", `${RECALL_API_BASE}/api/v1/sdk_upload/`, {
+        recallApiBase: RECALL_API_BASE,
+        recallApiKeyPreview: maskToken(RECALL_API_KEY),
+      });
 
       const recallRes = await fetch(`${RECALL_API_BASE}/api/v1/sdk_upload/`, {
         method: "POST",
@@ -212,13 +220,39 @@ app.post("/api/create_sdk_recording", async (req, res) => {
       console.log("Recall status:", recallRes.status);
 
       const text = await recallRes.text();
-      console.log("Text:", text);
-      // If Recall returned an error, forward it so you can see it
-      if (!recallRes.ok) {
-        return res.status(recallRes.status).send(text || "Recall API error (empty body)");
+      console.log("Recall raw response:", text);
+
+      let payload = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch (parseError) {
+        console.error("Recall response was not valid JSON:", parseError);
       }
-  
-      const payload = JSON.parse(text);
+
+      if (!recallRes.ok) {
+        return res.status(recallRes.status).json({
+          error: "Recall API request failed",
+          recall_status: recallRes.status,
+          recall_api_base: RECALL_API_BASE,
+          recall_response: payload ?? text ?? null,
+        });
+      }
+
+      console.log("Recall sdk_upload payload summary:", {
+        hasUploadToken: Boolean(payload?.upload_token),
+        uploadTokenPreview: maskToken(payload?.upload_token),
+        uploadTokenLength: payload?.upload_token?.length ?? null,
+        recordingId: payload?.recording_id ?? null,
+      });
+
+      if (!payload?.upload_token || !payload?.recording_id) {
+        return res.status(502).json({
+          error: "Recall API response missing required fields",
+          recall_api_base: RECALL_API_BASE,
+          recall_response: payload ?? text ?? null,
+        });
+      }
+
       return res.json(payload);
     } catch (err) {
       console.error("create_sdk_recording failed:", err);

@@ -1,9 +1,12 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('node:path');
+require('dotenv').config({ path: path.join(__dirname, '..', 'backend', '.env') });
 const RecallAiSdk = require('@recallai/desktop-sdk');
 
+const RECALL_API_BASE = process.env.RECALL_API_BASE || "https://us-west-2.recall.ai";
+
 RecallAiSdk.init({
-  apiUrl: "https://us-west-2.recall.ai"
+  apiUrl: RECALL_API_BASE
 });
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -14,6 +17,12 @@ if (require('electron-squirrel-startup')) {
 const BACKEND_API_BASE = "http://localhost:3000";
 
 const recordingIdByWindowId = new Map();
+
+function maskToken(token) {
+  if (!token || typeof token !== "string") return null;
+  if (token.length <= 8) return `${token.slice(0, 2)}...${token.slice(-2)}`;
+  return `${token.slice(0, 6)}...${token.slice(-4)}`;
+}
 
 let mainWindow;
 
@@ -53,8 +62,22 @@ const createSdkRecording = async () => {
   const res = await fetch(`${BACKEND_API_BASE}/api/create_sdk_recording`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-  })
-  return res.json();
+  });
+
+  const text = await res.text();
+  let payload = null;
+
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch (parseError) {
+    throw new Error(`Backend returned non-JSON response: ${text || "(empty body)"}`);
+  }
+
+  if (!res.ok) {
+    throw new Error(`Backend ${res.status}: ${JSON.stringify(payload)}`);
+  }
+
+  return payload;
 };
 
 async function waitForTranscriptUrl(recordingId, { intervalMs = 3000, timeoutMs = 5 * 60 * 1000 } = {}) {
@@ -80,25 +103,37 @@ const startRecording = async (windowId, uploadToken) => {
 }
 
 RecallAiSdk.addEventListener("meeting-detected", async (evt) => {
-  console.log("meeting-detected", evt);
+  try {
+    console.log("meeting-detected", evt);
+    console.log("Recall config", { apiUrl: RECALL_API_BASE, backendApiBase: BACKEND_API_BASE });
 
-  const payload = await createSdkRecording();
-  console.log("payload", payload);
+    const payload = await createSdkRecording();
+    console.log("payload", payload);
 
-  const upload_token = payload.upload_token;
-  const recordingId = payload.recording_id;
+    const upload_token = payload?.upload_token;
+    const recordingId = payload?.recording_id;
 
-  if (!upload_token) throw new Error("Missing upload_token from backend");
-  if (!recordingId) throw new Error("Missing payload.recording_id (recording_id) from backend");
+    console.log("create_sdk_recording payload summary", {
+      hasUploadToken: Boolean(upload_token),
+      uploadTokenPreview: maskToken(upload_token),
+      uploadTokenLength: upload_token?.length ?? null,
+      recordingId: recordingId ?? null,
+    });
 
-  const windowId = evt.window.id;
-  recordingIdByWindowId.set(windowId, recordingId);
+    if (!upload_token) throw new Error("Missing upload_token from backend");
+    if (!recordingId) throw new Error("Missing payload.recording_id (recording_id) from backend");
 
-  await startRecording(windowId, upload_token);
+    const windowId = evt.window.id;
+    recordingIdByWindowId.set(windowId, recordingId);
 
-  console.log(`Started recording for window ${windowId}`);
-  console.log(`Upload token: ${upload_token}`);
-  console.log(`Recording ID: ${recordingId}`);
+    await startRecording(windowId, upload_token);
+
+    console.log(`Started recording for window ${windowId}`);
+    console.log(`Upload token preview: ${maskToken(upload_token)}`);
+    console.log(`Recording ID: ${recordingId}`);
+  } catch (error) {
+    console.error("meeting-detected failed:", error);
+  }
 });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
