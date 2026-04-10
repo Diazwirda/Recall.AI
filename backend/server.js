@@ -16,6 +16,7 @@ function maskToken(token) {
 }
 
 const completedRecordings = new Set(); // sdk_upload.complete seen
+const completedAudioMixedRecordings = new Set(); // audio_mixed.done seen
 const transcriptStateByRecordingId = new Map();
 // recordingId -> { status: "starting" | "processing" | "complete" | "failed", transcriptId?: string, error?: string }
 
@@ -50,21 +51,29 @@ app.post("/api/summarize", async (req, res) => {
   });
 
 async function createTranscript(recordingId) {
-const res = await fetch(`${RECALL_API_BASE}/api/v1/recording/${recordingId}/create_transcript/`, {
-    method: "POST",
-    headers: {
-    accept: "application/json",
-    "content-type": "application/json",
-    Authorization: `Token ${RECALL_API_KEY}`,
-    },
-    body: JSON.stringify({
-    provider: { recallai_async: { language_code: "en" } }, // example
-    }),
-});
+const url = `${RECALL_API_BASE}/api/v1/recording/${recordingId}/create_transcript/`;
+console.log("createTranscript URL:", url);
+const res = await fetch(url, {
+  method: "POST",
+  headers: {
+  accept: "application/json",
+  "content-type": "application/json",
+  Authorization: `Token ${RECALL_API_KEY}`,
+  },
+  body: JSON.stringify({
+    provider: {
+      recallai_async: {
+        language_code: "auto"
+      }
+    }
+  })
+}); 
 
+if (!res.ok) {
 const text = await res.text();
-if (!res.ok) throw new Error(`create_transcript ${res.status}: ${text}`);
-return JSON.parse(text);
+throw new Error(`create_transcript ${res.status}: ${text}`);
+}
+return res.json();
 }  
 
 // IMPORTANT: For signature verification you often need the raw body,
@@ -72,23 +81,36 @@ return JSON.parse(text);
 app.post("/webhooks/recall", express.json(), async (req, res) => {
   const evt = req.body;
   const eventName = evt?.event;
+  const data = evt?.data ?? {};
 
-  const recordingId = evt?.data?.recording?.id ? String(evt.data.recording.id) : null;
-  const transcriptId = evt?.data?.transcript?.id ? String(evt.data.transcript.id) : null;
+  const recordingId = data?.recording_id
+    ? String(data.recording_id)
+    : data?.recording?.id
+      ? String(data.recording.id)
+      : null;
+  const transcriptId = data?.transcript_id
+    ? String(data.transcript_id)
+    : data?.transcript?.id
+      ? String(data.transcript.id)
+      : null;
 
   console.log("webhook:", eventName, { recordingId, transcriptId });
 
   const isUploadDone =
     eventName === "sdk_upload.complete" || eventName === "sdk_upload.completed";
 
+  if (eventName === "audio_mixed.done" && recordingId) {
+    completedAudioMixedRecordings.add(recordingId);
+  }
+
   if (isUploadDone && recordingId) {
     completedRecordings.add(recordingId);
 
-    // Start async transcription exactly once per recording
     if (!transcriptStateByRecordingId.has(recordingId)) {
       transcriptStateByRecordingId.set(recordingId, { status: "starting" });
 
       try {
+        console.log("SDK upload complete, creating transcript job for:", recordingId);
         const job = await createTranscript(recordingId);
         const createdTranscriptId = job?.id ?? job?.transcript?.id ?? null;
 
@@ -210,12 +232,18 @@ app.post("/api/create_sdk_recording", async (req, res) => {
       });
 
       const recallRes = await fetch(`${RECALL_API_BASE}/api/v1/sdk_upload/`, {
-        method: "POST",
+        method: 'POST',
         headers: {
+          'Authorization': `Token ${RECALL_API_KEY}`,
+          'Content-Type': 'application/json',
           accept: "application/json",
-          "content-type": "application/json",
-          Authorization: `Token ${RECALL_API_KEY}`,
         },
+        body: JSON.stringify({
+          recording_config: {
+            video_mixed_mp4: null,
+            audio_mixed_mp3: {}
+          }
+        })
       });
       console.log("Recall status:", recallRes.status);
 
@@ -295,13 +323,40 @@ app.get("/api/recording/:recordingId", async (req, res) => {
     const recText = await recRes.text();
     if (!recRes.ok) return res.status(recRes.status).send(recText);
 
-    const recording = JSON.parse(recText);
-    const videoUrl =
-      recording?.media_shortcuts?.video_mixed?.data?.download_url ?? null;
+    return res.json(JSON.parse(recText));
+  } catch (e) {
+    return res.status(500).json({ error: e?.message ?? String(e) });
+  }
+});
 
-    if (!videoUrl) {
+app.get("/api/audio_for_recording/:recordingId", async (req, res) => {
+  const recordingId = String(req.params.recordingId);
+  if (!recordingId) {
+    return res.status(400).json({ error: "Missing recordingId" });
+  }
+
+  if (!completedAudioMixedRecordings.has(recordingId)) {
+    return res.status(409).json({ status: "processing_audio", recording_id: recordingId });
+  }
+
+  try {
+    const audioRes = await fetch(`${RECALL_API_BASE}/api/v1/audio_mixed?recording_id=${recordingId}`, {
+      headers: {
+        accept: "application/json",
+        Authorization: `Token ${RECALL_API_KEY}`,
+      },
+    });
+
+    const audioText = await audioRes.text();
+    if (!audioRes.ok) return res.status(audioRes.status).send(audioText);
+
+    const payload = JSON.parse(audioText);
+    const audio = Array.isArray(payload?.results) ? payload.results[0] : null;
+    const audioUrl = audio?.data?.download_url ?? null;
+
+    if (!audioUrl) {
       return res.status(409).json({
-        status: "processing_video",
+        status: "processing_audio",
         recording_id: recordingId,
       });
     }
@@ -309,7 +364,8 @@ app.get("/api/recording/:recordingId", async (req, res) => {
     return res.json({
       status: "complete",
       recording_id: recordingId,
-      video_download_url: videoUrl,
+      audio_download_url: audioUrl,
+      audio_id: audio?.id ?? null,
     });
   } catch (e) {
     return res.status(500).json({ error: e?.message ?? String(e) });

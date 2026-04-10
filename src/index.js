@@ -26,6 +26,17 @@ function maskToken(token) {
 
 let mainWindow;
 
+async function requestPermissionWithLog(permission) {
+  try {
+    const result = await RecallAiSdk.requestPermission(permission);
+    console.log(`Permission ${permission}:`, result);
+    return result;
+  } catch (error) {
+    console.error(`Permission ${permission} failed:`, error);
+    return null;
+  }
+}
+
 const createWindow = () => {
   mainWindow = new BrowserWindow({
     width: 800,
@@ -46,9 +57,10 @@ const createWindow = () => {
 app.whenReady().then(() => {
   createWindow();
 
-  RecallAiSdk.requestPermission("accessibility");
-  RecallAiSdk.requestPermission("microphone");
-  RecallAiSdk.requestPermission("screen-capture");
+  requestPermissionWithLog("accessibility");
+  requestPermissionWithLog("microphone");
+  requestPermissionWithLog("system-audio");
+  requestPermissionWithLog("screen-capture");
   // On OS X it's common to re-create a window in the app when the
   // dock icon is clicked and there are no other windows open.
   app.on('activate', () => {
@@ -137,25 +149,32 @@ RecallAiSdk.addEventListener("meeting-detected", async (evt) => {
 });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-async function waitForVideoUrl(recordingId, { intervalMs = 3000, timeoutMs = 5 * 60 * 1000 } = {}) {
+async function waitForAudioUrl(recordingId, { intervalMs = 5000, timeoutMs = 120000 } = {}) {
   const start = Date.now();
 
   while (Date.now() - start < timeoutMs) {
-    const res = await fetch(`${BACKEND_API_BASE}/api/recording/${recordingId}`);
+    try {
+      const res = await fetch(`${BACKEND_API_BASE}/api/audio_for_recording/${recordingId}`);
 
-    if (res.status === 409) {        // webhook not arrived yet
-      await sleep(intervalMs);
-      continue;
+      if (res.status === 409) {
+        await sleep(intervalMs);
+        continue;
+      }
+
+      const text = await res.text();
+      if (!res.ok) throw new Error(`backend ${res.status}: ${text}`);
+
+      const data = JSON.parse(text);
+      const audioUrl = data?.audio_download_url ?? null;
+      if (audioUrl) return audioUrl;
+    } catch (e) {
+      console.log("Polling...", e?.message ?? String(e));
     }
 
-    const text = await res.text();
-    if (!res.ok) throw new Error(`backend ${res.status}: ${text}`);
-
-    const data = JSON.parse(text);
-    return data.video_download_url;
+    await sleep(intervalMs);
   }
 
-  throw new Error("Timed out waiting for sdk_upload.complete / video url");
+  throw new Error("Timed out waiting for audio_mixed.done / audio url");
 }
 
 function wordsToText(words) {
@@ -221,14 +240,51 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
     const recordingId = recordingIdByWindowId.get(windowId);
     if (!recordingId) throw new Error(`No recordingId for windowId=${windowId}`);
 
-    const videoUrl = await waitForVideoUrl(recordingId);
-    console.log("✅ Video URL ready:", videoUrl);
+    const audioUrl = await waitForAudioUrl(recordingId);
+    console.log("Audio URL ready:", audioUrl);
 
     const transcriptUrl = await waitForTranscriptUrl(recordingId);
-    console.log("✅ Transcript URL ready:", transcriptUrl);
+    console.log("Transcript URL ready:", transcriptUrl);
 
-    const parts = await fetch(transcriptUrl).then(r => r.json());
+    const transcriptRes = await fetch(transcriptUrl);
+    const transcriptText = await transcriptRes.text();
+    if (!transcriptRes.ok) {
+      throw new Error(`transcript download ${transcriptRes.status}: ${transcriptText}`);
+    }
+
+    console.log("Transcript raw preview:", transcriptText.slice(0, 500));
+
+    let parts = [];
+    try {
+      parts = transcriptText ? JSON.parse(transcriptText) : [];
+    } catch (error) {
+      throw new Error(`Transcript JSON parse failed: ${error?.message ?? String(error)}`);
+    }
+
+    console.log("Transcript payload shape:", {
+      isArray: Array.isArray(parts),
+      topLevelType: typeof parts,
+      itemCount: Array.isArray(parts) ? parts.length : null,
+    });
+
     const utterances = cleanTranscriptParts(parts);
+    console.log("Transcript processing summary:", {
+      partsCount: Array.isArray(parts) ? parts.length : 0,
+      utterancesCount: utterances.length,
+      firstUtterance: utterances[0] ?? null,
+    });
+
+    if (!utterances.length) {
+      console.warn("Transcript contained no utterances. Skipping summarize step.");
+      mainWindow?.webContents.send("audioUrl:ready", { recordingId, audioUrl });
+      mainWindow?.webContents.send("transcript:ready", { recordingId, utterances: [] });
+      mainWindow?.webContents.send("summary:ready", {
+        recordingId,
+        summary: "No spoken content was detected in the transcript.",
+      });
+      recordingIdByWindowId.delete(windowId);
+      return;
+    }
 
     const sumRes = await fetch(`${BACKEND_API_BASE}/api/summarize`, {
       method: "POST",
@@ -240,7 +296,7 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
     if (!sumRes.ok) throw new Error(`summarize ${sumRes.status}: ${sumText}`);
     const { summary } = JSON.parse(sumText);
 
-    mainWindow?.webContents.send("videoUrl:ready", { recordingId, videoUrl });
+    mainWindow?.webContents.send("audioUrl:ready", { recordingId, audioUrl });
     mainWindow?.webContents.send("transcript:ready", { recordingId, utterances });
     mainWindow?.webContents.send("summary:ready", { recordingId, summary });
 
