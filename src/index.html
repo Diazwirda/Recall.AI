@@ -1,37 +1,160 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Cliff</title>
-    <style>
-      body { font-family: system-ui, -apple-system, sans-serif; margin: 16px; }
-      .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin: 12px 0; }
-      .title { font-size: 16px; font-weight: 700; margin: 0 0 10px; }
-      .line { margin: 6px 0; }
-      .speaker { font-weight: 700; margin-right: 8px; }
-      a { word-break: break-all; }
-      pre { white-space: pre-wrap; word-wrap: break-word; margin: 0; }
-    </style>
+    <link rel="stylesheet" href="./index.css" />
   </head>
   <body>
-    <div class="card" id="participantsCard" style="display:none;">
-      <div class="title">Meeting</div>
-      <div id="participantsText"></div>
-    </div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <div class="brand-badge">C</div>
+          <div>
+            <p class="eyebrow">Recall Meeting Copilot</p>
+            <h1>Cliff</h1>
+          </div>
+        </div>
 
-    <div class="card" id="videoCard" style="display:none;">
-      <div class="title">Video</div>
-      <div id="videoLink"></div>
-    </div>
+        <section class="panel status-panel">
+          <div class="panel-heading">
+            <p class="eyebrow">Live Status</p>
+            <span class="status-pill" id="statusPill">Idle</span>
+          </div>
+          <h2 id="statusTitle">Ready to capture your next meeting</h2>
+          <p id="statusDescription">
+            Cliff will listen for a supported meeting window and prepare notes automatically.
+          </p>
+          <div class="progress-steps">
+            <div class="step is-active" id="stepDetect">
+              <span class="step-dot"></span>
+              <div>
+                <strong>Waiting for meeting</strong>
+                <p>Looking for a window to attach recording to.</p>
+              </div>
+            </div>
+            <div class="step" id="stepRecord">
+              <span class="step-dot"></span>
+              <div>
+                <strong>Recording</strong>
+                <p>Capturing audio from the active meeting.</p>
+              </div>
+            </div>
+            <div class="step" id="stepProcess">
+              <span class="step-dot"></span>
+              <div>
+                <strong>Processing</strong>
+                <p>Preparing transcript and summary.</p>
+              </div>
+            </div>
+            <div class="step" id="stepDone">
+              <span class="step-dot"></span>
+              <div>
+                <strong>Ready</strong>
+                <p>Meeting notes are available to review.</p>
+              </div>
+            </div>
+          </div>
+        </section>
 
-    <div class="card" id="summaryCard" style="display:none;">
-      <div class="title">Summary</div>
-      <pre id="summary"></pre>
-    </div>
+        <section class="panel">
+          <div class="panel-heading">
+            <p class="eyebrow">Session Snapshot</p>
+          </div>
+          <dl class="meta-list">
+            <div>
+              <dt>Participants</dt>
+              <dd id="participantCount">0 people</dd>
+            </div>
+            <div>
+              <dt>Recording</dt>
+              <dd id="recordingState">Not started</dd>
+            </div>
+            <div>
+              <dt>Summary</dt>
+              <dd id="summaryState">Waiting</dd>
+            </div>
+          </dl>
+        </section>
+      </aside>
 
-    <div class="card" id="transcriptCard" style="display:none;">
-      <div class="title">Transcript</div>
-      <div id="transcript"></div>
+      <main class="workspace">
+        <header class="hero panel">
+          <div>
+            <p class="eyebrow">Meeting Notes</p>
+            <h2>Your AI meeting desk</h2>
+            <p class="hero-copy">
+              Review the most useful outcomes first, then dive into participants, source links,
+              and the full transcript when you need more context.
+            </p>
+          </div>
+          <div class="hero-actions">
+            <button class="ghost-button" id="copySummaryButton" type="button" disabled>
+              Copy summary
+            </button>
+            <a class="ghost-button is-link" id="openRecordingLink" href="#" target="_blank" rel="noreferrer" aria-disabled="true">
+              Open recording
+            </a>
+          </div>
+        </header>
+
+        <section class="empty-state panel" id="emptyState">
+          <p class="eyebrow">Waiting</p>
+          <h3>No meeting captured yet</h3>
+          <p>
+            When a meeting starts, Cliff will move through recording, processing, and summary
+            generation automatically. This area will then fill with your notes.
+          </p>
+        </section>
+
+        <section class="content-grid is-hidden" id="contentGrid">
+          <div class="primary-column">
+            <article class="panel focus-card" id="summaryCard">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Primary Output</p>
+                  <h3>Meeting summary</h3>
+                </div>
+              </div>
+              <pre id="summary"></pre>
+            </article>
+
+            <article class="panel transcript-card" id="transcriptCard">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Reference</p>
+                  <h3>Transcript</h3>
+                </div>
+              </div>
+              <div id="transcript"></div>
+            </article>
+          </div>
+
+          <div class="secondary-column">
+            <article class="panel" id="participantsCard">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">People</p>
+                  <h3>Participants</h3>
+                </div>
+              </div>
+              <div class="participant-list" id="participantsList"></div>
+              <p class="participants-text" id="participantsText"></p>
+            </article>
+
+            <article class="panel" id="videoCard">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Source</p>
+                  <h3>Recording link</h3>
+                </div>
+              </div>
+              <div id="videoLink"></div>
+            </article>
+          </div>
+        </section>
+      </main>
     </div>
 
     <script src="./renderer.js"></script>

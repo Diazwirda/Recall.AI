@@ -1,54 +1,141 @@
-const videoCard = document.getElementById("videoCard");
-const videoLinkEl = document.getElementById("videoLink");
-
-const summaryCard = document.getElementById("summaryCard");
 const summaryEl = document.getElementById("summary");
-
-const transcriptCard = document.getElementById("transcriptCard");
 const transcriptEl = document.getElementById("transcript");
-
-const participantsCard = document.getElementById("participantsCard");
 const participantsTextEl = document.getElementById("participantsText");
+const participantsListEl = document.getElementById("participantsList");
+const videoLinkEl = document.getElementById("videoLink");
+const emptyStateEl = document.getElementById("emptyState");
+const contentGridEl = document.getElementById("contentGrid");
+const statusPillEl = document.getElementById("statusPill");
+const statusTitleEl = document.getElementById("statusTitle");
+const statusDescriptionEl = document.getElementById("statusDescription");
+const participantCountEl = document.getElementById("participantCount");
+const recordingStateEl = document.getElementById("recordingState");
+const summaryStateEl = document.getElementById("summaryState");
+const copySummaryButtonEl = document.getElementById("copySummaryButton");
+const openRecordingLinkEl = document.getElementById("openRecordingLink");
 
-function renderLink(url) {
-  videoLinkEl.innerHTML = "";
-  const a = document.createElement("a");
-  a.href = url;
-  a.target = "_blank";
-  a.rel = "noreferrer";
-  a.textContent = "Meeting Link"; // <- plain text label
-  videoLinkEl.appendChild(a);
+const stepEls = {
+  detect: document.getElementById("stepDetect"),
+  record: document.getElementById("stepRecord"),
+  process: document.getElementById("stepProcess"),
+  done: document.getElementById("stepDone"),
+};
+
+const state = {
+  phase: "idle",
+  videoUrl: "",
+  summary: "",
+  utterances: [],
+  participants: [],
+};
+
+function setStepState(activeKey) {
+  const order = ["detect", "record", "process", "done"];
+  const activeIndex = order.indexOf(activeKey);
+
+  for (const [key, el] of Object.entries(stepEls)) {
+    const index = order.indexOf(key);
+    el.classList.toggle("is-active", key === activeKey);
+    el.classList.toggle("is-complete", activeIndex > index);
+  }
 }
 
-function renderParticipants(utterances) {
+function setStatus(phase, title, description, tone = "default") {
+  state.phase = phase;
+  statusPillEl.textContent = phase;
+  statusPillEl.classList.toggle("is-warning", tone === "warning");
+  statusPillEl.classList.toggle("is-danger", tone === "danger");
+  statusTitleEl.textContent = title;
+  statusDescriptionEl.textContent = description;
+}
+
+function showContent(show) {
+  emptyStateEl.classList.toggle("is-hidden", show);
+  contentGridEl.classList.toggle("is-hidden", !show);
+}
+
+function updateSnapshot() {
+  participantCountEl.textContent = `${state.participants.length} ${state.participants.length === 1 ? "person" : "people"}`;
+
+  if (state.phase === "Idle") {
+    recordingStateEl.textContent = "Not started";
+  } else if (state.phase === "Listening") {
+    recordingStateEl.textContent = "Recording in progress";
+  } else if (state.phase === "Processing") {
+    recordingStateEl.textContent = "Meeting captured";
+  } else if (state.phase === "Ready") {
+    recordingStateEl.textContent = "Completed";
+  } else {
+    recordingStateEl.textContent = "Attention needed";
+  }
+
+  summaryStateEl.textContent = state.summary ? "Available" : state.phase === "Error" ? "Failed" : "Waiting";
+}
+
+function collectParticipants(utterances) {
   const seen = new Set();
   const speakers = [];
 
-  for (const u of utterances) {
-    const name = u?.speaker ?? "Unknown";
+  for (const utterance of utterances) {
+    const name = utterance?.speaker ?? "Unknown";
     if (!seen.has(name)) {
       seen.add(name);
       speakers.push(name);
     }
   }
 
-  participantsTextEl.textContent = `This is a meeting between ${speakers.join(", ")}.`;
-  participantsCard.style.display = "block";
+  return speakers;
+}
+
+function renderParticipants(participants) {
+  participantsListEl.innerHTML = "";
+
+  for (const person of participants) {
+    const chip = document.createElement("span");
+    chip.className = "participant-chip";
+    chip.textContent = person;
+    participantsListEl.appendChild(chip);
+  }
+
+  participantsTextEl.textContent = participants.length
+    ? `Cliff identified ${participants.length} participant${participants.length === 1 ? "" : "s"} in this meeting.`
+    : "No participant names were detected in the transcript yet.";
+}
+
+function renderLink(url) {
+  videoLinkEl.innerHTML = "";
+
+  if (!url) {
+    openRecordingLinkEl.setAttribute("aria-disabled", "true");
+    openRecordingLinkEl.href = "#";
+    return;
+  }
+
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noreferrer";
+  anchor.textContent = "Open recording asset";
+  videoLinkEl.appendChild(anchor);
+
+  openRecordingLinkEl.href = url;
+  openRecordingLinkEl.setAttribute("aria-disabled", "false");
 }
 
 function renderTranscript(utterances) {
   transcriptEl.innerHTML = "";
 
-  for (const u of utterances) {
-    const line = document.createElement("div");
+  for (const utterance of utterances) {
+    const line = document.createElement("article");
     line.className = "line";
 
     const speaker = document.createElement("span");
-    speaker.className = "speaker";
-    speaker.textContent = (u.speaker ?? "Unknown") + ":"; // <- same labeling
+    speaker.className = "line-speaker";
+    speaker.textContent = `${utterance.speaker ?? "Unknown"}`;
 
-    const text = document.createElement("span");
-    text.textContent = " " + (u.text ?? ""); // <- space after colon
+    const text = document.createElement("p");
+    text.className = "line-text";
+    text.textContent = utterance.text ?? "";
 
     line.appendChild(speaker);
     line.appendChild(text);
@@ -56,21 +143,91 @@ function renderTranscript(utterances) {
   }
 }
 
+function renderSummary(summary) {
+  summaryEl.textContent = summary || "Summary will appear here once processing is complete.";
+  copySummaryButtonEl.disabled = !summary;
+}
+
+function refreshView() {
+  const hasContent = Boolean(state.summary || state.utterances.length || state.videoUrl);
+  showContent(hasContent);
+  renderParticipants(state.participants);
+  renderLink(state.videoUrl);
+  renderTranscript(state.utterances);
+  renderSummary(state.summary);
+  updateSnapshot();
+}
+
+function setIdleState() {
+  setStatus(
+    "Idle",
+    "Ready to capture your next meeting",
+    "Cliff will listen for a supported meeting window and prepare notes automatically."
+  );
+  setStepState("detect");
+  updateSnapshot();
+}
+
+copySummaryButtonEl.addEventListener("click", async () => {
+  if (!state.summary) return;
+
+  try {
+    await navigator.clipboard.writeText(state.summary);
+    copySummaryButtonEl.textContent = "Copied";
+    window.setTimeout(() => {
+      copySummaryButtonEl.textContent = "Copy summary";
+    }, 1200);
+  } catch (_error) {
+    copySummaryButtonEl.textContent = "Copy failed";
+    window.setTimeout(() => {
+      copySummaryButtonEl.textContent = "Copy summary";
+    }, 1200);
+  }
+});
+
+window.cliff.onStatusChanged(({ phase, title, description, tone }) => {
+  setStatus(phase, title, description, tone);
+
+  if (phase === "Listening") {
+    setStepState("record");
+  } else if (phase === "Processing") {
+    setStepState("process");
+  } else if (phase === "Ready") {
+    setStepState("done");
+  } else if (phase === "Error") {
+    setStepState("process");
+  } else {
+    setStepState("detect");
+  }
+
+  updateSnapshot();
+});
+
 window.cliff.onVideoReady(({ videoUrl }) => {
-  if (!videoUrl) return;
-  videoCard.style.display = "block";
-  renderLink(videoUrl);
+  state.videoUrl = videoUrl || "";
+  refreshView();
 });
 
 window.cliff.onTranscriptReady(({ utterances }) => {
-  if (!utterances?.length) return;
-  renderParticipants(utterances);
-  transcriptCard.style.display = "block";
-  renderTranscript(utterances);
+  state.utterances = Array.isArray(utterances) ? utterances : [];
+  state.participants = collectParticipants(state.utterances);
+  refreshView();
 });
 
 window.cliff.onSummaryReady(({ summary }) => {
-  if (!summary) return;
-  summaryCard.style.display = "block";
-  summaryEl.textContent = summary;
+  state.summary = summary || "";
+
+  if (state.summary) {
+    setStatus(
+      "Ready",
+      "Meeting notes are ready to review",
+      "Your summary, participants, and transcript have been organized in one workspace."
+    );
+    setStepState("done");
+  }
+
+  refreshView();
 });
+
+setIdleState();
+refreshView();

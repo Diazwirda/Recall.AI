@@ -26,6 +26,10 @@ function maskToken(token) {
 
 let mainWindow;
 
+function emitStatus(payload) {
+  mainWindow?.webContents.send("status:changed", payload);
+}
+
 async function requestPermissionWithLog(permission) {
   try {
     const result = await RecallAiSdk.requestPermission(permission);
@@ -118,6 +122,11 @@ RecallAiSdk.addEventListener("meeting-detected", async (evt) => {
   try {
     console.log("meeting-detected", evt);
     console.log("Recall config", { apiUrl: RECALL_API_BASE, backendApiBase: BACKEND_API_BASE });
+    emitStatus({
+      phase: "Listening",
+      title: "Meeting detected and recording started",
+      description: "Cliff is attached to the meeting window and capturing audio in the background.",
+    });
 
     const payload = await createSdkRecording();
     console.log("payload", payload);
@@ -145,6 +154,12 @@ RecallAiSdk.addEventListener("meeting-detected", async (evt) => {
     console.log(`Recording ID: ${recordingId}`);
   } catch (error) {
     console.error("meeting-detected failed:", error);
+    emitStatus({
+      phase: "Error",
+      title: "Cliff could not start this meeting",
+      description: error?.message ?? "Recording setup failed before capture began.",
+      tone: "danger",
+    });
   }
 });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -235,6 +250,11 @@ function cleanTranscriptParts(parts, { mergeGapSeconds = 1.25 } = {}) {
 RecallAiSdk.addEventListener("recording-ended", async (evt) => {
   try {
     console.log("Meeting has ended");
+    emitStatus({
+      phase: "Processing",
+      title: "Meeting ended, processing notes",
+      description: "Cliff is retrieving the audio, transcript, and summary for this session.",
+    });
 
     const windowId = evt.window.id;
     const recordingId = recordingIdByWindowId.get(windowId);
@@ -299,10 +319,21 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
     mainWindow?.webContents.send("audioUrl:ready", { recordingId, audioUrl });
     mainWindow?.webContents.send("transcript:ready", { recordingId, utterances });
     mainWindow?.webContents.send("summary:ready", { recordingId, summary });
+    emitStatus({
+      phase: "Ready",
+      title: "Meeting notes are ready",
+      description: "Summary, participants, recording link, and transcript have been prepared.",
+    });
 
     recordingIdByWindowId.delete(windowId);
   } catch (e) {
     console.error("recording-ended failed:", e);
+    emitStatus({
+      phase: "Error",
+      title: "Something interrupted processing",
+      description: e?.message ?? "Cliff could not finish preparing this meeting.",
+      tone: "danger",
+    });
   }
 });
 
