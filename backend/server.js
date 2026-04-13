@@ -3,10 +3,25 @@ const express = require("express");
 const app = express();
 require('dotenv').config();
 
-const RECALL_API_BASE = process.env.RECALL_API_BASE || "https://us-west-2.recall.ai";
+function normalizeRecallApiBase(value) {
+  const fallback = "https://us-west-2.recall.ai";
+  const raw = (value || fallback).trim();
+  const unquoted = raw.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+
+  try {
+    const url = new URL(unquoted);
+
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+const RECALL_API_BASE = normalizeRecallApiBase(process.env.RECALL_API_BASE);
 const RECALL_API_KEY = process.env.RECALL_API_KEY;
-const OpenAI = require("openai");
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 app.use(express.json()); // lets you read JSON bodies
 
 function maskToken(token) {
@@ -21,34 +36,6 @@ const transcriptStateByRecordingId = new Map();
 // recordingId -> { status: "starting" | "processing" | "complete" | "failed", transcriptId?: string, error?: string }
 
 const transcriptCache = new Map(); // transcriptId -> retrieved transcript object
-
-app.post("/api/summarize", async (req, res) => {
-    try {
-      const { utterances } = req.body;
-  
-      if (!Array.isArray(utterances) || utterances.length === 0) {
-        return res.status(400).json({ error: "Missing utterances[]" });
-      }
-  
-      const transcriptText = utterances
-        .slice(0, 300) // keep it reasonable at first
-        .map(u => `${u.speaker}: ${u.text}`)
-        .join("\n");
-  
-      const response = await openai.responses.create({
-        model: "gpt-5.2",
-        input: [
-          { role: "system", content: "Summarize the meeting. Include key decisions, action items, and open questions." },
-          { role: "user", content: transcriptText },
-        ],
-        max_output_tokens: 500,
-      });
-  
-      return res.json({ summary: response.output_text });
-    } catch (e) {
-      return res.status(500).json({ error: e?.message ?? String(e) });
-    }
-  });
 
 async function createTranscript(recordingId) {
 const url = `${RECALL_API_BASE}/api/v1/recording/${recordingId}/create_transcript/`;
@@ -284,7 +271,19 @@ app.post("/api/create_sdk_recording", async (req, res) => {
       return res.json(payload);
     } catch (err) {
       console.error("create_sdk_recording failed:", err);
-      return res.status(500).json({ error: String(err) });
+      const cause = err?.cause;
+      return res.status(500).json({
+        error: err?.message ?? String(err),
+        recall_api_base: RECALL_API_BASE,
+        cause: cause
+          ? {
+              code: cause.code ?? null,
+              syscall: cause.syscall ?? null,
+              hostname: cause.hostname ?? null,
+              message: cause.message ?? String(cause),
+            }
+          : null,
+      });
     }
   });
 
@@ -374,5 +373,6 @@ app.get("/api/audio_for_recording/:recordingId", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
+  console.log("Recall API base:", RECALL_API_BASE);
   console.log(`Server running on http://localhost:${PORT}`);
 });

@@ -1,4 +1,3 @@
-const summaryEl = document.getElementById("summary");
 const transcriptEl = document.getElementById("transcript");
 const participantsTextEl = document.getElementById("participantsText");
 const participantsListEl = document.getElementById("participantsList");
@@ -10,8 +9,6 @@ const statusTitleEl = document.getElementById("statusTitle");
 const statusDescriptionEl = document.getElementById("statusDescription");
 const participantCountEl = document.getElementById("participantCount");
 const recordingStateEl = document.getElementById("recordingState");
-const summaryStateEl = document.getElementById("summaryState");
-const copySummaryButtonEl = document.getElementById("copySummaryButton");
 const openRecordingLinkEl = document.getElementById("openRecordingLink");
 
 const stepEls = {
@@ -24,7 +21,6 @@ const stepEls = {
 const state = {
   phase: "idle",
   videoUrl: "",
-  summary: "",
   utterances: [],
   participants: [],
 };
@@ -69,7 +65,6 @@ function updateSnapshot() {
     recordingStateEl.textContent = "Attention needed";
   }
 
-  summaryStateEl.textContent = state.summary ? "Available" : state.phase === "Error" ? "Failed" : "Waiting";
 }
 
 function collectParticipants(utterances) {
@@ -143,18 +138,12 @@ function renderTranscript(utterances) {
   }
 }
 
-function renderSummary(summary) {
-  summaryEl.textContent = summary || "Summary will appear here once processing is complete.";
-  copySummaryButtonEl.disabled = !summary;
-}
-
 function refreshView() {
-  const hasContent = Boolean(state.summary || state.utterances.length || state.videoUrl);
+  const hasContent = Boolean(state.utterances.length || state.videoUrl);
   showContent(hasContent);
   renderParticipants(state.participants);
   renderLink(state.videoUrl);
   renderTranscript(state.utterances);
-  renderSummary(state.summary);
   updateSnapshot();
 }
 
@@ -167,23 +156,6 @@ function setIdleState() {
   setStepState("detect");
   updateSnapshot();
 }
-
-copySummaryButtonEl.addEventListener("click", async () => {
-  if (!state.summary) return;
-
-  try {
-    await navigator.clipboard.writeText(state.summary);
-    copySummaryButtonEl.textContent = "Copied";
-    window.setTimeout(() => {
-      copySummaryButtonEl.textContent = "Copy summary";
-    }, 1200);
-  } catch (_error) {
-    copySummaryButtonEl.textContent = "Copy failed";
-    window.setTimeout(() => {
-      copySummaryButtonEl.textContent = "Copy summary";
-    }, 1200);
-  }
-});
 
 window.cliff.onStatusChanged(({ phase, title, description, tone }) => {
   setStatus(phase, title, description, tone);
@@ -211,21 +183,6 @@ window.cliff.onVideoReady(({ videoUrl }) => {
 window.cliff.onTranscriptReady(({ utterances }) => {
   state.utterances = Array.isArray(utterances) ? utterances : [];
   state.participants = collectParticipants(state.utterances);
-  refreshView();
-});
-
-window.cliff.onSummaryReady(({ summary }) => {
-  state.summary = summary || "";
-
-  if (state.summary) {
-    setStatus(
-      "Ready",
-      "Meeting notes are ready to review",
-      "Your summary, participants, and transcript have been organized in one workspace."
-    );
-    setStepState("done");
-  }
-
   refreshView();
 });
 

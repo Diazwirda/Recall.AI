@@ -45,7 +45,7 @@
               <span class="step-dot"></span>
               <div>
                 <strong>Processing</strong>
-                <p>Preparing transcript and summary.</p>
+                <p>Preparing transcript.</p>
               </div>
             </div>
             <div class="step" id="stepDone">
@@ -71,10 +71,6 @@
               <dt>Recording</dt>
               <dd id="recordingState">Not started</dd>
             </div>
-            <div>
-              <dt>Summary</dt>
-              <dd id="summaryState">Waiting</dd>
-            </div>
           </dl>
         </section>
       </aside>
@@ -85,14 +81,11 @@
             <p class="eyebrow">Meeting Notes</p>
             <h2>Your AI meeting desk</h2>
             <p class="hero-copy">
-              Review the most useful outcomes first, then dive into participants, source links,
-              and the full transcript when you need more context.
+              Follow the recording status, then review participants, source links, and the full
+              transcript when you need more context.
             </p>
           </div>
           <div class="hero-actions">
-            <button class="ghost-button" id="copySummaryButton" type="button" disabled>
-              Copy summary
-            </button>
             <a class="ghost-button is-link" id="openRecordingLink" href="#" target="_blank" rel="noreferrer" aria-disabled="true">
               Open recording
             </a>
@@ -103,23 +96,13 @@
           <p class="eyebrow">Waiting</p>
           <h3>No meeting captured yet</h3>
           <p>
-            When a meeting starts, Cliff will move through recording, processing, and summary
-            generation automatically. This area will then fill with your notes.
+            When a meeting starts, Cliff will move through recording and transcript generation
+            automatically. This area will then fill with your notes.
           </p>
         </section>
 
         <section class="content-grid is-hidden" id="contentGrid">
           <div class="primary-column">
-            <article class="panel focus-card" id="summaryCard">
-              <div class="panel-heading">
-                <div>
-                  <p class="eyebrow">Primary Output</p>
-                  <h3>Meeting summary</h3>
-                </div>
-              </div>
-              <pre id="summary"></pre>
-            </article>
-
             <article class="panel transcript-card" id="transcriptCard">
               <div class="panel-heading">
                 <div>

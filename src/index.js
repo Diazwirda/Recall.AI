@@ -3,7 +3,24 @@ const path = require('node:path');
 require('dotenv').config({ path: path.join(__dirname, '..', 'backend', '.env') });
 const RecallAiSdk = require('@recallai/desktop-sdk');
 
-const RECALL_API_BASE = process.env.RECALL_API_BASE || "https://us-west-2.recall.ai";
+function normalizeRecallApiBase(value) {
+  const fallback = "https://us-west-2.recall.ai";
+  const raw = (value || fallback).trim();
+  const unquoted = raw.replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
+
+  try {
+    const url = new URL(unquoted);
+
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+const RECALL_API_BASE = normalizeRecallApiBase(process.env.RECALL_API_BASE);
 
 RecallAiSdk.init({
   apiUrl: RECALL_API_BASE
@@ -253,7 +270,7 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
     emitStatus({
       phase: "Processing",
       title: "Meeting ended, processing notes",
-      description: "Cliff is retrieving the audio, transcript, and summary for this session.",
+      description: "Cliff is retrieving the audio and transcript for this session.",
     });
 
     const windowId = evt.window.id;
@@ -298,31 +315,21 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
       console.warn("Transcript contained no utterances. Skipping summarize step.");
       mainWindow?.webContents.send("audioUrl:ready", { recordingId, audioUrl });
       mainWindow?.webContents.send("transcript:ready", { recordingId, utterances: [] });
-      mainWindow?.webContents.send("summary:ready", {
-        recordingId,
-        summary: "No spoken content was detected in the transcript.",
+      emitStatus({
+        phase: "Ready",
+        title: "Meeting notes are ready",
+        description: "Participants, recording link, and transcript have been prepared.",
       });
       recordingIdByWindowId.delete(windowId);
       return;
     }
 
-    const sumRes = await fetch(`${BACKEND_API_BASE}/api/summarize`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ utterances }),
-    });
-
-    const sumText = await sumRes.text();
-    if (!sumRes.ok) throw new Error(`summarize ${sumRes.status}: ${sumText}`);
-    const { summary } = JSON.parse(sumText);
-
     mainWindow?.webContents.send("audioUrl:ready", { recordingId, audioUrl });
     mainWindow?.webContents.send("transcript:ready", { recordingId, utterances });
-    mainWindow?.webContents.send("summary:ready", { recordingId, summary });
     emitStatus({
       phase: "Ready",
       title: "Meeting notes are ready",
-      description: "Summary, participants, recording link, and transcript have been prepared.",
+      description: "Participants, recording link, and transcript have been prepared.",
     });
 
     recordingIdByWindowId.delete(windowId);
