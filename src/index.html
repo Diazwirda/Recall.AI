@@ -64,10 +64,6 @@
           </div>
           <dl class="meta-list">
             <div>
-              <dt>Participants</dt>
-              <dd id="participantCount">0 people</dd>
-            </div>
-            <div>
               <dt>Recording</dt>
               <dd id="recordingState">Not started</dd>
             </div>
@@ -76,7 +72,7 @@
       </aside>
 
       <main class="workspace">
-        <header class="hero panel">
+        <header class="hero panel" id="heroPanel">
           <div>
             <p class="eyebrow">Meeting Notes</p>
             <h2>Your AI meeting desk</h2>
@@ -84,11 +80,6 @@
               Follow the recording status, then review participants, source links, and the full
               transcript when you need more context.
             </p>
-          </div>
-          <div class="hero-actions">
-            <a class="ghost-button is-link" id="openRecordingLink" href="#" target="_blank" rel="noreferrer" aria-disabled="true">
-              Open recording
-            </a>
           </div>
         </header>
 
@@ -115,37 +106,79 @@
           </div>
 
           <div class="secondary-column">
-            <article class="panel" id="participantsCard">
+            <article class="panel side-card participants-card" id="participantsCard">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">People</p>
                   <h3>Participants</h3>
                 </div>
               </div>
-              <div class="participant-list" id="participantsList"></div>
-              <p class="participants-text" id="participantsText"></p>
+              <div class="side-card-body">
+                <div class="participant-list" id="participantsList"></div>
+                <p class="participants-text" id="participantsText"></p>
+              </div>
             </article>
 
-            <article class="panel" id="videoCard">
+            <article class="panel side-card source-card" id="videoCard">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">Source</p>
                   <h3>Recording link</h3>
                 </div>
               </div>
-              <div id="videoLink"></div>
+              <div class="side-card-body">
+                <div id="videoLink"></div>
+              </div>
             </article>
 
-            <article class="panel history-card" id="historyCard">
+            <article class="panel side-card history-card" id="historyCard">
               <div class="panel-heading">
                 <div>
                   <p class="eyebrow">History</p>
                   <h3>Recording history</h3>
                 </div>
               </div>
-              <div class="history-list" id="historyList"></div>
-              <p class="participants-text" id="historyEmpty">No recordings yet.</p>
+              <div class="side-card-body">
+                <div class="history-list" id="historyList"></div>
+                <p class="participants-text" id="historyEmpty">No recordings yet.</p>
+                <button class="show-all-button is-hidden" id="showAllHistoryButton" type="button">
+                  Show all
+                </button>
+              </div>
             </article>
+          </div>
+        </section>
+
+        <section class="history-page panel is-hidden" id="historyPage">
+          <div class="history-page-header">
+            <div>
+              <p class="eyebrow">History</p>
+              <h2>Recording history</h2>
+              <p class="history-page-copy">
+                Browse all saved recordings with time, title, and direct audio access.
+              </p>
+            </div>
+            <button class="back-button" id="backToDeskButton" type="button">Back to desk</button>
+          </div>
+
+          <div class="history-table-wrap">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Time</th>
+                  <th>Date</th>
+                  <th>Audio</th>
+                </tr>
+              </thead>
+              <tbody id="historyTableBody"></tbody>
+            </table>
+          </div>
+
+          <div class="history-pagination">
+            <button class="pagination-button" id="historyPrevButton" type="button">Previous</button>
+            <span class="history-pagination-info" id="historyPaginationInfo">Page 1 of 1</span>
+            <button class="pagination-button" id="historyNextButton" type="button">Next</button>
           </div>
         </section>
       </main>

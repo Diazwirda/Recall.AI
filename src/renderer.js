@@ -4,14 +4,20 @@ const participantsListEl = document.getElementById("participantsList");
 const videoLinkEl = document.getElementById("videoLink");
 const emptyStateEl = document.getElementById("emptyState");
 const contentGridEl = document.getElementById("contentGrid");
+const historyPageEl = document.getElementById("historyPage");
+const heroPanelEl = document.getElementById("heroPanel");
 const statusPillEl = document.getElementById("statusPill");
 const statusTitleEl = document.getElementById("statusTitle");
 const statusDescriptionEl = document.getElementById("statusDescription");
-const participantCountEl = document.getElementById("participantCount");
 const recordingStateEl = document.getElementById("recordingState");
-const openRecordingLinkEl = document.getElementById("openRecordingLink");
 const historyListEl = document.getElementById("historyList");
 const historyEmptyEl = document.getElementById("historyEmpty");
+const showAllHistoryButtonEl = document.getElementById("showAllHistoryButton");
+const backToDeskButtonEl = document.getElementById("backToDeskButton");
+const historyTableBodyEl = document.getElementById("historyTableBody");
+const historyPrevButtonEl = document.getElementById("historyPrevButton");
+const historyNextButtonEl = document.getElementById("historyNextButton");
+const historyPaginationInfoEl = document.getElementById("historyPaginationInfo");
 
 const stepEls = {
   detect: document.getElementById("stepDetect"),
@@ -21,6 +27,8 @@ const stepEls = {
 };
 
 const HISTORY_STORAGE_KEY = "cliff:recordingHistory";
+const HISTORY_PREVIEW_LIMIT = 5;
+const HISTORY_PAGE_SIZE = 8;
 const pendingRecordings = new Map();
 
 const state = {
@@ -29,6 +37,8 @@ const state = {
   utterances: [],
   participants: [],
   history: [],
+  isHistoryPageOpen: false,
+  historyPage: 1,
 };
 
 function loadHistory() {
@@ -46,7 +56,7 @@ function saveHistory(items) {
   try {
     window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items));
   } catch (_error) {
-    // Ignore storage failures (quota, blocked storage, etc.)
+    // Ignore storage failures such as quota or unavailable local storage.
   }
 }
 
@@ -75,9 +85,20 @@ function showContent(show) {
   contentGridEl.classList.toggle("is-hidden", !show);
 }
 
-function updateSnapshot() {
-  participantCountEl.textContent = `${state.participants.length} ${state.participants.length === 1 ? "person" : "people"}`;
+function updatePageVisibility() {
+  historyPageEl.classList.toggle("is-hidden", !state.isHistoryPageOpen);
+  heroPanelEl.classList.toggle("is-hidden", state.isHistoryPageOpen);
 
+  if (state.isHistoryPageOpen) {
+    emptyStateEl.classList.add("is-hidden");
+    contentGridEl.classList.add("is-hidden");
+  } else {
+    const hasContent = Boolean(state.utterances.length || state.recordingUrl || state.history.length);
+    showContent(hasContent);
+  }
+}
+
+function updateSnapshot() {
   if (state.phase === "Idle") {
     recordingStateEl.textContent = "Not started";
   } else if (state.phase === "Listening") {
@@ -89,7 +110,6 @@ function updateSnapshot() {
   } else {
     recordingStateEl.textContent = "Attention needed";
   }
-
 }
 
 function collectParticipants(utterances) {
@@ -97,9 +117,12 @@ function collectParticipants(utterances) {
   const speakers = [];
 
   for (const utterance of utterances) {
-    const name = utterance?.speaker ?? "Unknown";
-    if (!seen.has(name)) {
-      seen.add(name);
+    const rawName = utterance?.speaker ?? "Unknown";
+    const name = String(rawName).trim() || "Unknown";
+    const normalized = name.toLowerCase();
+
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
       speakers.push(name);
     }
   }
@@ -111,14 +134,24 @@ function renderParticipants(participants) {
   participantsListEl.innerHTML = "";
 
   for (const person of participants) {
-    const chip = document.createElement("span");
+    const chip = document.createElement("article");
     chip.className = "participant-chip";
-    chip.textContent = person;
+
+    const name = document.createElement("strong");
+    name.className = "participant-name";
+    name.textContent = person;
+
+    const label = document.createElement("span");
+    label.className = "participant-role";
+    label.textContent = "Detected speaker";
+
+    chip.appendChild(name);
+    chip.appendChild(label);
     participantsListEl.appendChild(chip);
   }
 
   participantsTextEl.textContent = participants.length
-    ? `Cliff identified ${participants.length} participant${participants.length === 1 ? "" : "s"} in this meeting.`
+    ? `${participants.length} participant${participants.length === 1 ? "" : "s"} detected from the transcript.`
     : "No participant names were detected in the transcript yet.";
 }
 
@@ -126,21 +159,26 @@ function renderLink(url) {
   videoLinkEl.innerHTML = "";
 
   if (!url) {
-    openRecordingLinkEl.setAttribute("aria-disabled", "true");
-    openRecordingLinkEl.href = "#";
-    videoLinkEl.textContent = "No recording link yet.";
+    const empty = document.createElement("p");
+    empty.className = "source-empty";
+    empty.textContent = "Recording link will appear here after audio processing completes.";
+    videoLinkEl.appendChild(empty);
     return;
   }
 
   const anchor = document.createElement("a");
+  anchor.className = "source-link";
   anchor.href = url;
   anchor.target = "_blank";
   anchor.rel = "noreferrer";
-  anchor.textContent = "Open recording asset";
-  videoLinkEl.appendChild(anchor);
+  anchor.textContent = "Open audio recording";
 
-  openRecordingLinkEl.href = url;
-  openRecordingLinkEl.setAttribute("aria-disabled", "false");
+  const caption = document.createElement("span");
+  caption.className = "source-caption";
+  caption.textContent = "Secure audio file from the latest captured meeting.";
+
+  videoLinkEl.appendChild(anchor);
+  videoLinkEl.appendChild(caption);
 }
 
 function formatTime(isoString) {
@@ -160,7 +198,7 @@ function makeTitle(participants, endedAt) {
     return `Meeting with ${participants[0]}`;
   }
   if (participants.length === 2) {
-    return `Meeting with ${participants[0]} & ${participants[1]}`;
+    return `Meeting with ${participants[0]} and ${participants[1]}`;
   }
   if (participants.length > 2) {
     return `Meeting with ${participants[0]} +${participants.length - 1}`;
@@ -182,6 +220,7 @@ function addToHistory(entry) {
   if (state.history.some((item) => item.recordingId === entry.recordingId)) {
     return;
   }
+
   state.history = [entry, ...state.history].slice(0, 30);
   saveHistory(state.history);
 }
@@ -190,12 +229,21 @@ function finalizeHistoryEntry(recordingId) {
   const pending = pendingRecordings.get(recordingId);
   if (!pending) return;
   if (!pending.audioUrl || !pending.title || !pending.endedAt) return;
+
   addToHistory(pending);
   pendingRecordings.delete(recordingId);
 }
 
 function renderTranscript(utterances) {
   transcriptEl.innerHTML = "";
+
+  if (!utterances.length) {
+    const empty = document.createElement("div");
+    empty.className = "transcript-empty";
+    empty.textContent = "Transcript is still unavailable for this recording, or Recall returned no readable speech segments yet.";
+    transcriptEl.appendChild(empty);
+    return;
+  }
 
   for (const utterance of utterances) {
     const line = document.createElement("article");
@@ -217,15 +265,18 @@ function renderTranscript(utterances) {
 
 function renderHistory(items) {
   historyListEl.innerHTML = "";
+  const previewItems = items.slice(0, HISTORY_PREVIEW_LIMIT);
 
   if (!items.length) {
     historyEmptyEl.classList.remove("is-hidden");
+    showAllHistoryButtonEl.classList.add("is-hidden");
     return;
   }
 
   historyEmptyEl.classList.add("is-hidden");
+  showAllHistoryButtonEl.classList.toggle("is-hidden", items.length < HISTORY_PREVIEW_LIMIT);
 
-  for (const item of items) {
+  for (const item of previewItems) {
     const row = document.createElement("div");
     row.className = "history-item";
 
@@ -240,7 +291,7 @@ function renderHistory(items) {
     time.className = "history-time";
     const timeText = formatTime(item.endedAt || item.startedAt);
     const dateText = formatDate(item.endedAt || item.startedAt);
-    time.textContent = timeText && dateText ? `${timeText} · ${dateText}` : timeText || dateText || "";
+    time.textContent = timeText && dateText ? `${timeText} | ${dateText}` : timeText || dateText || "";
 
     meta.appendChild(title);
     meta.appendChild(time);
@@ -265,13 +316,68 @@ function renderHistory(items) {
   }
 }
 
+function renderHistoryTable(items) {
+  historyTableBodyEl.innerHTML = "";
+
+  const totalPages = Math.max(1, Math.ceil(items.length / HISTORY_PAGE_SIZE));
+  state.historyPage = Math.min(state.historyPage, totalPages);
+  const pageStart = (state.historyPage - 1) * HISTORY_PAGE_SIZE;
+  const pageItems = items.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
+
+  if (!pageItems.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.textContent = "No recording history available.";
+    row.appendChild(cell);
+    historyTableBodyEl.appendChild(row);
+  }
+
+  for (const item of pageItems) {
+    const row = document.createElement("tr");
+
+    const titleCell = document.createElement("td");
+    const titleStrong = document.createElement("strong");
+    titleStrong.textContent = item.title || "Meeting recording";
+    titleCell.appendChild(titleStrong);
+
+    const timeCell = document.createElement("td");
+    timeCell.textContent = formatTime(item.endedAt || item.startedAt) || "-";
+
+    const dateCell = document.createElement("td");
+    dateCell.textContent = formatDate(item.endedAt || item.startedAt) || "-";
+
+    const audioCell = document.createElement("td");
+    if (item.audioUrl) {
+      const link = document.createElement("a");
+      link.href = item.audioUrl;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "Open audio";
+      audioCell.appendChild(link);
+    } else {
+      audioCell.textContent = "Unavailable";
+    }
+
+    row.appendChild(titleCell);
+    row.appendChild(timeCell);
+    row.appendChild(dateCell);
+    row.appendChild(audioCell);
+    historyTableBodyEl.appendChild(row);
+  }
+
+  historyPaginationInfoEl.textContent = `Page ${state.historyPage} of ${totalPages}`;
+  historyPrevButtonEl.disabled = state.historyPage <= 1;
+  historyNextButtonEl.disabled = state.historyPage >= totalPages;
+}
+
 function refreshView() {
-  const hasContent = Boolean(state.utterances.length || state.recordingUrl || state.history.length);
-  showContent(hasContent);
+  updatePageVisibility();
   renderParticipants(state.participants);
   renderLink(state.recordingUrl);
   renderTranscript(state.utterances);
   renderHistory(state.history);
+  renderHistoryTable(state.history);
   updateSnapshot();
 }
 
@@ -318,6 +424,7 @@ window.cliff.onVideoReady((payload) => {
     }
     finalizeHistoryEntry(recordingId);
   }
+
   refreshView();
 });
 
@@ -325,6 +432,7 @@ window.cliff.onTranscriptReady((payload) => {
   const { utterances, recordingId, endedAt, startedAt } = payload || {};
   state.utterances = Array.isArray(utterances) ? utterances : [];
   state.participants = collectParticipants(state.utterances);
+
   const pending = getPendingRecording(recordingId);
   if (pending) {
     pending.participants = state.participants;
@@ -333,7 +441,34 @@ window.cliff.onTranscriptReady((payload) => {
     if (startedAt) pending.startedAt = startedAt;
     finalizeHistoryEntry(recordingId);
   }
+
   refreshView();
+});
+
+showAllHistoryButtonEl.addEventListener("click", () => {
+  state.isHistoryPageOpen = true;
+  state.historyPage = 1;
+  refreshView();
+});
+
+backToDeskButtonEl.addEventListener("click", () => {
+  state.isHistoryPageOpen = false;
+  refreshView();
+});
+
+historyPrevButtonEl.addEventListener("click", () => {
+  if (state.historyPage > 1) {
+    state.historyPage -= 1;
+    refreshView();
+  }
+});
+
+historyNextButtonEl.addEventListener("click", () => {
+  const totalPages = Math.max(1, Math.ceil(state.history.length / HISTORY_PAGE_SIZE));
+  if (state.historyPage < totalPages) {
+    state.historyPage += 1;
+    refreshView();
+  }
 });
 
 state.history = loadHistory();

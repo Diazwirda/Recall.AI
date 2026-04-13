@@ -235,17 +235,70 @@ function wordsToText(words) {
     .trim();
 }
 
+function collectTranscriptParts(payload) {
+  if (Array.isArray(payload)) {
+    if (payload.some((item) => Array.isArray(item?.words) || item?.text)) {
+      return payload;
+    }
+
+    for (const item of payload) {
+      const nested = collectTranscriptParts(item);
+      if (nested.length) return nested;
+    }
+
+    return [];
+  }
+
+  if (!payload || typeof payload !== "object") {
+    return [];
+  }
+
+  const candidateKeys = [
+    "parts",
+    "utterances",
+    "segments",
+    "results",
+    "items",
+    "data",
+    "transcript",
+  ];
+
+  for (const key of candidateKeys) {
+    if (key in payload) {
+      const nested = collectTranscriptParts(payload[key]);
+      if (nested.length) return nested;
+    }
+  }
+
+  return [];
+}
+
 function cleanTranscriptParts(parts, { mergeGapSeconds = 1.25 } = {}) {
   const utterances = [];
 
   for (const part of parts || []) {
-    const speaker = part?.participant?.name ?? "Unknown";
+    const speaker =
+      part?.participant?.name ??
+      part?.speaker?.name ??
+      part?.speaker_name ??
+      part?.speaker ??
+      "Unknown";
     const words = Array.isArray(part?.words) ? part.words : [];
-    if (!words.length) continue;
 
-    const start = words[0]?.start_timestamp?.relative ?? null;
-    const end = words[words.length - 1]?.end_timestamp?.relative ?? null;
-    const text = wordsToText(words);
+    const start =
+      words[0]?.start_timestamp?.relative ??
+      part?.start_timestamp?.relative ??
+      part?.start ??
+      null;
+    const end =
+      words[words.length - 1]?.end_timestamp?.relative ??
+      part?.end_timestamp?.relative ??
+      part?.end ??
+      null;
+    const text = words.length
+      ? wordsToText(words)
+      : String(part?.text ?? part?.transcript ?? "").trim();
+
     if (!text) continue;
 
     const prev = utterances[utterances.length - 1];
@@ -293,17 +346,19 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
 
     console.log("Transcript raw preview:", transcriptText.slice(0, 500));
 
-    let parts = [];
+    let transcriptPayload = [];
     try {
-      parts = transcriptText ? JSON.parse(transcriptText) : [];
+      transcriptPayload = transcriptText ? JSON.parse(transcriptText) : [];
     } catch (error) {
       throw new Error(`Transcript JSON parse failed: ${error?.message ?? String(error)}`);
     }
 
+    const parts = collectTranscriptParts(transcriptPayload);
+
     console.log("Transcript payload shape:", {
-      isArray: Array.isArray(parts),
-      topLevelType: typeof parts,
-      itemCount: Array.isArray(parts) ? parts.length : null,
+      isArray: Array.isArray(transcriptPayload),
+      topLevelType: typeof transcriptPayload,
+      partsCount: Array.isArray(parts) ? parts.length : null,
     });
 
     const utterances = cleanTranscriptParts(parts);
