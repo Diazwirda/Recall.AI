@@ -10,6 +10,8 @@ const statusDescriptionEl = document.getElementById("statusDescription");
 const participantCountEl = document.getElementById("participantCount");
 const recordingStateEl = document.getElementById("recordingState");
 const openRecordingLinkEl = document.getElementById("openRecordingLink");
+const historyListEl = document.getElementById("historyList");
+const historyEmptyEl = document.getElementById("historyEmpty");
 
 const stepEls = {
   detect: document.getElementById("stepDetect"),
@@ -18,12 +20,35 @@ const stepEls = {
   done: document.getElementById("stepDone"),
 };
 
+const HISTORY_STORAGE_KEY = "cliff:recordingHistory";
+const pendingRecordings = new Map();
+
 const state = {
   phase: "idle",
-  videoUrl: "",
+  recordingUrl: "",
   utterances: [],
   participants: [],
+  history: [],
 };
+
+function loadHistory() {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_error) {
+    return [];
+  }
+}
+
+function saveHistory(items) {
+  try {
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(items));
+  } catch (_error) {
+    // Ignore storage failures (quota, blocked storage, etc.)
+  }
+}
 
 function setStepState(activeKey) {
   const order = ["detect", "record", "process", "done"];
@@ -103,6 +128,7 @@ function renderLink(url) {
   if (!url) {
     openRecordingLinkEl.setAttribute("aria-disabled", "true");
     openRecordingLinkEl.href = "#";
+    videoLinkEl.textContent = "No recording link yet.";
     return;
   }
 
@@ -115,6 +141,57 @@ function renderLink(url) {
 
   openRecordingLinkEl.href = url;
   openRecordingLinkEl.setAttribute("aria-disabled", "false");
+}
+
+function formatTime(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  return date.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDate(isoString) {
+  if (!isoString) return "";
+  const date = new Date(isoString);
+  return date.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function makeTitle(participants, endedAt) {
+  if (participants.length === 1) {
+    return `Meeting with ${participants[0]}`;
+  }
+  if (participants.length === 2) {
+    return `Meeting with ${participants[0]} & ${participants[1]}`;
+  }
+  if (participants.length > 2) {
+    return `Meeting with ${participants[0]} +${participants.length - 1}`;
+  }
+  const dateLabel = formatDate(endedAt) || "today";
+  return `Meeting on ${dateLabel}`;
+}
+
+function getPendingRecording(recordingId) {
+  if (!recordingId) return null;
+  if (!pendingRecordings.has(recordingId)) {
+    pendingRecordings.set(recordingId, { recordingId });
+  }
+  return pendingRecordings.get(recordingId);
+}
+
+function addToHistory(entry) {
+  if (!entry?.recordingId) return;
+  if (state.history.some((item) => item.recordingId === entry.recordingId)) {
+    return;
+  }
+  state.history = [entry, ...state.history].slice(0, 30);
+  saveHistory(state.history);
+}
+
+function finalizeHistoryEntry(recordingId) {
+  const pending = pendingRecordings.get(recordingId);
+  if (!pending) return;
+  if (!pending.audioUrl || !pending.title || !pending.endedAt) return;
+  addToHistory(pending);
+  pendingRecordings.delete(recordingId);
 }
 
 function renderTranscript(utterances) {
@@ -138,12 +215,63 @@ function renderTranscript(utterances) {
   }
 }
 
+function renderHistory(items) {
+  historyListEl.innerHTML = "";
+
+  if (!items.length) {
+    historyEmptyEl.classList.remove("is-hidden");
+    return;
+  }
+
+  historyEmptyEl.classList.add("is-hidden");
+
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "history-item";
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+
+    const title = document.createElement("strong");
+    title.className = "history-title";
+    title.textContent = item.title || "Meeting recording";
+
+    const time = document.createElement("span");
+    time.className = "history-time";
+    const timeText = formatTime(item.endedAt || item.startedAt);
+    const dateText = formatDate(item.endedAt || item.startedAt);
+    time.textContent = timeText && dateText ? `${timeText} · ${dateText}` : timeText || dateText || "";
+
+    meta.appendChild(title);
+    meta.appendChild(time);
+
+    const linkWrap = document.createElement("div");
+    linkWrap.className = "history-link";
+
+    if (item.audioUrl) {
+      const link = document.createElement("a");
+      link.href = item.audioUrl;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = "Open audio";
+      linkWrap.appendChild(link);
+    } else {
+      linkWrap.textContent = "Audio link unavailable";
+    }
+
+    row.appendChild(meta);
+    row.appendChild(linkWrap);
+    historyListEl.appendChild(row);
+  }
+}
+
 function refreshView() {
-  const hasContent = Boolean(state.utterances.length || state.videoUrl);
+  const hasContent = Boolean(state.utterances.length || state.recordingUrl || state.history.length);
   showContent(hasContent);
   renderParticipants(state.participants);
-  renderLink(state.videoUrl);
+  renderLink(state.recordingUrl);
   renderTranscript(state.utterances);
+  renderHistory(state.history);
   updateSnapshot();
 }
 
@@ -175,16 +303,39 @@ window.cliff.onStatusChanged(({ phase, title, description, tone }) => {
   updateSnapshot();
 });
 
-window.cliff.onVideoReady(({ videoUrl }) => {
-  state.videoUrl = videoUrl || "";
+window.cliff.onVideoReady((payload) => {
+  const { videoUrl, audioUrl, recordingId, endedAt, startedAt } = payload || {};
+  const resolvedUrl = videoUrl || audioUrl || "";
+  state.recordingUrl = resolvedUrl;
+
+  const pending = getPendingRecording(recordingId);
+  if (pending) {
+    pending.audioUrl = resolvedUrl;
+    pending.endedAt = endedAt || new Date().toISOString();
+    if (startedAt) pending.startedAt = startedAt;
+    if (!pending.title) {
+      pending.title = makeTitle(pending.participants || [], pending.endedAt);
+    }
+    finalizeHistoryEntry(recordingId);
+  }
   refreshView();
 });
 
-window.cliff.onTranscriptReady(({ utterances }) => {
+window.cliff.onTranscriptReady((payload) => {
+  const { utterances, recordingId, endedAt, startedAt } = payload || {};
   state.utterances = Array.isArray(utterances) ? utterances : [];
   state.participants = collectParticipants(state.utterances);
+  const pending = getPendingRecording(recordingId);
+  if (pending) {
+    pending.participants = state.participants;
+    pending.title = makeTitle(state.participants, endedAt || pending.endedAt);
+    pending.endedAt = endedAt || pending.endedAt;
+    if (startedAt) pending.startedAt = startedAt;
+    finalizeHistoryEntry(recordingId);
+  }
   refreshView();
 });
 
+state.history = loadHistory();
 setIdleState();
 refreshView();

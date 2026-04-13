@@ -34,6 +34,7 @@ if (require('electron-squirrel-startup')) {
 const BACKEND_API_BASE = "http://localhost:3000";
 
 const recordingIdByWindowId = new Map();
+const recordingMetaById = new Map();
 
 function maskToken(token) {
   if (!token || typeof token !== "string") return null;
@@ -163,6 +164,7 @@ RecallAiSdk.addEventListener("meeting-detected", async (evt) => {
 
     const windowId = evt.window.id;
     recordingIdByWindowId.set(windowId, recordingId);
+    recordingMetaById.set(recordingId, { startedAt: new Date().toISOString() });
 
     await startRecording(windowId, upload_token);
 
@@ -313,25 +315,51 @@ RecallAiSdk.addEventListener("recording-ended", async (evt) => {
 
     if (!utterances.length) {
       console.warn("Transcript contained no utterances. Skipping summarize step.");
-      mainWindow?.webContents.send("audioUrl:ready", { recordingId, audioUrl });
-      mainWindow?.webContents.send("transcript:ready", { recordingId, utterances: [] });
+      const meta = recordingMetaById.get(recordingId);
+      const endedAt = new Date().toISOString();
+      mainWindow?.webContents.send("audioUrl:ready", {
+        recordingId,
+        audioUrl,
+        startedAt: meta?.startedAt ?? null,
+        endedAt,
+      });
+      mainWindow?.webContents.send("transcript:ready", {
+        recordingId,
+        utterances: [],
+        startedAt: meta?.startedAt ?? null,
+        endedAt,
+      });
       emitStatus({
         phase: "Ready",
         title: "Meeting notes are ready",
         description: "Participants, recording link, and transcript have been prepared.",
       });
+      recordingMetaById.delete(recordingId);
       recordingIdByWindowId.delete(windowId);
       return;
     }
 
-    mainWindow?.webContents.send("audioUrl:ready", { recordingId, audioUrl });
-    mainWindow?.webContents.send("transcript:ready", { recordingId, utterances });
+    const meta = recordingMetaById.get(recordingId);
+    const endedAt = new Date().toISOString();
+    mainWindow?.webContents.send("audioUrl:ready", {
+      recordingId,
+      audioUrl,
+      startedAt: meta?.startedAt ?? null,
+      endedAt,
+    });
+    mainWindow?.webContents.send("transcript:ready", {
+      recordingId,
+      utterances,
+      startedAt: meta?.startedAt ?? null,
+      endedAt,
+    });
     emitStatus({
       phase: "Ready",
       title: "Meeting notes are ready",
       description: "Participants, recording link, and transcript have been prepared.",
     });
 
+    recordingMetaById.delete(recordingId);
     recordingIdByWindowId.delete(windowId);
   } catch (e) {
     console.error("recording-ended failed:", e);
